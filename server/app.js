@@ -844,6 +844,6 @@ app.get("/api/audit", requireAuth, requireRole("HR","CEO"), (req, res) => {
   `).all();
   res.json(rows);
 });
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log("API running on", PORT));
 
-const PORT = 3001;
-app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
