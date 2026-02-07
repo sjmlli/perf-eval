@@ -7,7 +7,7 @@ export function getRole() {
 }
 
 // Base URL: use same-origin, then Vercel rewrites /api/* to Render
-const API_BASE = "/api";
+const API_BASE = "";
 
 export async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
