@@ -6,14 +6,17 @@ export function getRole() {
   return localStorage.getItem("role");
 }
 
-export async function api(path, { method="GET", body } = {}) {
-  const res = await fetch(`http://localhost:3001${path}`, {
+// Base URL: use same-origin, then Vercel rewrites /api/* to Render
+const API_BASE = "/api";
+
+export async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(getToken() ? { "Authorization": `Bearer ${getToken()}` } : {})
+      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined
+    body: body ? JSON.stringify(body) : undefined,
   });
 
   const data = await res.json().catch(() => ({}));
@@ -23,16 +26,18 @@ export async function api(path, { method="GET", body } = {}) {
 
 // Download helper (CSV / files) with Authorization header
 export async function download(path, filename) {
-  const res = await fetch(`http://localhost:3001${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "GET",
     headers: {
-      ...(getToken() ? { "Authorization": `Bearer ${getToken()}` } : {})
-    }
+      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+    },
   });
 
   if (!res.ok) {
     let err = {};
-    try { err = await res.json(); } catch {}
+    try {
+      err = await res.json();
+    } catch {}
     throw err;
   }
 
