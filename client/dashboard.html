@@ -12,9 +12,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    /* خیلی مهم: برای قطع Resize Loop */
+    /* جلوگیری از Resize Loop: کانتینر با ارتفاع ثابت */
     .chart-wrap {
-      height: 260px;     /* هر عددی دوست داری */
+      height: 260px;
       width: 100%;
       position: relative;
     }
@@ -94,7 +94,6 @@
             <button id="exportTrend" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
           </div>
 
-          <!-- مهم: wrapper با ارتفاع ثابت -->
           <div class="chart-wrap">
             <canvas id="chart"></canvas>
           </div>
@@ -122,6 +121,13 @@
       }
     }
 
+    function toNumberSafe(v) {
+      // "65", "65 ", "65\r", "65,0" => 65
+      const s = String(v ?? "").trim().replace(",", ".");
+      const n = parseFloat(s);
+      return Number.isFinite(n) ? n : null;
+    }
+
     async function init() {
       const periods = await api("/api/periods");
       const sel = document.getElementById("period");
@@ -132,10 +138,11 @@
         const units = await api("/api/reports/units");
         const uSel = document.getElementById("unit");
         uSel.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join("");
-        // ❗️دیگه اینجا loadTrend خودکار نمی‌زنیم تا هنگ نشه
+        // عمداً خودکار لود نمی‌کنیم تا فشار/هنگ نشه
       } catch (e) {
-        document.getElementById("trendMsg").style.display = "block";
-        document.getElementById("trendMsg").textContent = t("common.accessDenied");
+        const msg = document.getElementById("trendMsg");
+        msg.style.display = "block";
+        msg.textContent = t("common.accessDenied");
       }
 
       await refreshAudit();
@@ -164,7 +171,7 @@
         const rows = await api(`/api/reports/trend/unit/${encodeURIComponent(unit)}`);
 
         const labels = rows.map(r => r.period_name);
-        const data = rows.map(r => Number(r.avg_score));
+        const data = rows.map(r => toNumberSafe(r.avg_score));
 
         clearChart();
 
@@ -173,13 +180,21 @@
           type: "line",
           data: {
             labels,
-            datasets: [{ label: `AVG Score — ${unit}`, data }]
+            datasets: [{
+              label: `AVG Score — ${unit}`,
+              data,
+              spanGaps: true
+            }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
-            parsing: false
+            parsing: false,
+            normalized: true,
+            scales: {
+              y: { min: 0, max: 100 }
+            }
           }
         });
 
@@ -200,7 +215,7 @@
         const pid = document.getElementById("period").value;
         const rows = await api(`/api/reports/top-performers/${pid}`);
         document.getElementById("top").innerHTML = rows.map(r =>
-          `<li><b>${r.full_name}</b> <span class="muted small">(${r.unit})</span> — <span class="badge ok">${Number(r.final_score).toFixed(2)}</span></li>`
+          `<li><b>${r.full_name}</b> <span class="muted small">(${r.unit})</span> — <span class="badge ok">${toNumberSafe(r.final_score)?.toFixed(2) ?? ""}</span></li>`
         ).join("");
         document.getElementById("topMsg").style.display = "none";
       } catch (e) {
