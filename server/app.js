@@ -101,7 +101,7 @@ app.post("/api/login", (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE username=?").get(username);
   if (!u) return res.status(401).json({ error: "INVALID_CREDENTIALS" });
   if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: "INVALID_CREDENTIALS" });
-  return res.json({ token: signToken(u), role: u.role, username: u.username });
+    return res.json({ token: signToken(u), role: String(u.role || "").toUpperCase(), username: u.username });
 });
 
 // ---------- KPI CRUD (HR/CEO) ----------
