@@ -9,6 +9,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check for Render
+app.get("/healthz", (req, res) => res.status(200).send("ok"));
+
 // ---------- helpers ----------
 function audit(userId, action, entityType, entityId, meta = {}) {
   db.prepare(
