@@ -11,6 +11,14 @@ app.use(express.json());
 
 // Health check for Render
 app.get("/healthz", (req, res) => res.status(200).send("ok"));
+// ---- Disable caching for API responses (prevents weird 304 loops on dashboards) ----
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
 
 // ---------- helpers ----------
 function audit(userId, action, entityType, entityId, meta = {}) {
