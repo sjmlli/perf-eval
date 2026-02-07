@@ -12,6 +12,8 @@ const API_BASE = "/api";
 export async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
+    cache: "no-store",
+    credentials: "omit",
     headers: {
       "Content-Type": "application/json",
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
@@ -28,6 +30,8 @@ export async function api(path, { method = "GET", body } = {}) {
 export async function download(path, filename) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "GET",
+    cache: "no-store",
+    credentials: "omit",
     headers: {
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
     },
