@@ -168,10 +168,26 @@
       msg.style.display = "none";
 
       try {
-        const rows = await api(`/api/reports/trend/unit/${encodeURIComponent(unit)}`);
+const rows = await api(`/api/reports/trend/unit/${encodeURIComponent(unit)}`);
 
-        const labels = rows.map(r => r.period_name);
-        const data = rows.map(r => toNumberSafe(r.avg_score));
+console.log("TREND rows from API:", rows);
+
+const labels = [];
+const data = [];
+
+for (const r of rows) {
+  const label = String(r.period_name ?? "").trim();
+
+  // عددسازی امن (حذف فاصله/کاراکترهای اضافی)
+  const raw = (r.avg_score ?? "").toString().trim().replace(",", ".");
+  const n = Number(raw);
+
+  labels.push(label);
+  data.push(Number.isFinite(n) ? n : null);
+}
+
+console.log("TREND labels/data:", { labels, data });
+
 
         clearChart();
 
