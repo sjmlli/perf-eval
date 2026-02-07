@@ -2,13 +2,13 @@ import jwt from "jsonwebtoken";
 
 const SECRET = "DEV_ONLY_CHANGE_ME";
 
+function normRole(r) {
+  return String(r || "").trim().toUpperCase();
+}
+
 export function signToken(user) {
   return jwt.sign(
-    {
-      uid: user.id,
-      role: String(user.role || "").toUpperCase(),
-      username: user.username,
-    },
+    { uid: user.id, role: normRole(user.role), username: user.username },
     SECRET,
     { expiresIn: "8h" }
   );
@@ -18,11 +18,10 @@ export function requireAuth(req, res, next) {
   const h = req.headers.authorization || "";
   const token = h.startsWith("Bearer ") ? h.slice(7) : null;
   if (!token) return res.status(401).json({ error: "NO_TOKEN" });
-
   try {
-    req.user = jwt.verify(token, SECRET);
-    // نرمال‌سازی نقش برای تمام ریکوئست‌ها
-    if (req.user?.role) req.user.role = String(req.user.role).toUpperCase();
+    const payload = jwt.verify(token, SECRET);
+    payload.role = normRole(payload.role); // normalize just in case
+    req.user = payload;
     next();
   } catch {
     res.status(401).json({ error: "INVALID_TOKEN" });
@@ -30,14 +29,11 @@ export function requireAuth(req, res, next) {
 }
 
 export function requireRole(...roles) {
-  const allowed = new Set(roles.map(r => String(r).toUpperCase()));
-
+  const allowed = roles.map(normRole);
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: "NO_AUTH" });
-
-    const role = String(req.user.role || "").toUpperCase();
-    if (!allowed.has(role)) return res.status(403).json({ error: "FORBIDDEN" });
-
+    const r = normRole(req.user.role);
+    if (!allowed.includes(r)) return res.status(403).json({ error: "FORBIDDEN" });
     next();
   };
 }
