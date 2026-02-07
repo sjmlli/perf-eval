@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Record Evaluation</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="evaluations" data-title-key="title.evaluations" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.evaluations">Record Evaluation</h1>
+        <p class="page-subtitle" data-i18n="eval.subtitle">Managers evaluate direct reports using template weights.</p>
+      </div>
+
+      <section class="card">
+        <h2 style="margin:0" data-i18n="eval.form.title">Performance evaluation</h2>
+        <p class="muted small" style="margin:6px 0 0 0" data-i18n="eval.form.hint">Weights come from the applicable template. Scores are validated.</p>
+
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 12px">
+          <div>
+            <label data-i18n="common.selectEmployee">Select employee</label>
+            <select id="emp"></select>
+          </div>
+          <div>
+            <label data-i18n="common.selectPeriod">Select period</label>
+            <select id="period"></select>
+          </div>
+        </div>
+
+        <div class="card soft" style="margin-top: 14px">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <h3 style="margin:0" data-i18n="eval.template.title">Applied template</h3>
+            <span class="badge"><i data-lucide="layers"></i> Template</span>
+          </div>
+          <pre id="tpl" style="margin-top:10px"></pre>
+        </div>
+
+        <div class="row wrap" style="justify-content: space-between; margin-top: 14px">
+          <h3 style="margin:0" data-i18n="eval.scores.title">KPI scores</h3>
+          <span class="badge"><i data-lucide="calculator"></i> Weighted</span>
+        </div>
+
+        <div id="kpis"></div>
+
+        <div class="row wrap" style="margin-top: 14px">
+          <button id="save" data-i18n="eval.save">Save evaluation</button>
+          <button id="reset" class="secondary" type="button" data-i18n="common.reset">Reset</button>
+        </div>
+
+        <pre id="msg" style="display:none"></pre>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    let currentTemplate = null;
+
+    async function loadTemplate(employeeId) {
+      const tData = await api(`/api/kpi-templates/applicable/${employeeId}`);
+      currentTemplate = tData;
+      document.getElementById("tpl").textContent = JSON.stringify({
+        template: tData.template,
+        items: tData.items.map(i => ({ title: i.title, weight: i.weight }))
+      }, null, 2);
+
+      const kp = document.getElementById("kpis");
+      kp.innerHTML = tData.items.map(k => `
+        <div class="card soft" style="margin:12px 0">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div style="min-width:0">
+              <div><b>${k.title}</b> <span class="badge">${k.type}</span></div>
+              <div class="muted small">Weight: ${k.weight} | Range: ${k.scale_min}…${k.scale_max}</div>
+            </div>
+            <div style="min-width:220px">
+              <label class="small muted" style="margin:0 0 6px 0">${t("eval.score")}</label>
+              <input type="number" min="${k.scale_min}" max="${k.scale_max}" value="0" data-kpi="${k.kpi_id}"/>
+            </div>
+          </div>
+
+          <label class="small muted" style="margin-top:10px">${t("eval.evidence")}</label>
+          <input placeholder="${t("eval.evidencePh")}" data-cmt="${k.kpi_id}"/>
+        </div>
+      `).join("");
+    }
+
+    async function init() {
+      const [emps, periods] = await Promise.all([
+        api("/api/employees"),
+        api("/api/periods")
+      ]);
+
+      const empSel = document.getElementById("emp");
+      empSel.innerHTML = emps.map(e => `<option value="${e.id}">${e.full_name} (${e.employee_code})</option>`).join("");
+
+      const perSel = document.getElementById("period");
+      perSel.innerHTML = periods.map(p => `<option value="${p.id}">${p.name} (${p.status})</option>`).join("");
+
+      if (emps.length > 0) await loadTemplate(emps[0].id);
+
+      empSel.onchange = async () => {
+        try { await loadTemplate(empSel.value); }
+        catch (e) { document.getElementById("tpl").textContent = JSON.stringify(e, null, 2); }
+      };
+    }
+
+    document.getElementById("reset").onclick = () => {
+      document.querySelectorAll("input[data-kpi]").forEach(inp => inp.value = 0);
+      document.querySelectorAll("input[data-cmt]").forEach(inp => inp.value = "");
+      toast("Reset scores.", "ok");
+    };
+
+    document.getElementById("save").onclick = async () => {
+      const msg = document.getElementById("msg");
+      try {
+        const employee_id = document.getElementById("emp").value;
+        const period_id = document.getElementById("period").value;
+
+        const scoreInputs = [...document.querySelectorAll("input[data-kpi]")];
+        const scores = scoreInputs.map(inp => {
+          const kpi_id = inp.dataset.kpi;
+          const score = Number(inp.value);
+          const comment = document.querySelector(`input[data-cmt="${kpi_id}"]`).value;
+          return { kpi_id, score, comment };
+        });
+
+        const r = await api("/api/evaluations", { method:"POST", body:{ employee_id, period_id, scores } });
+        msg.style.display = "none";
+        toast(`Saved. Final score: ${r.finalScore.toFixed(2)}`, "ok");
+      } catch (e) {
+        msg.style.display = "block";
+        msg.textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || "Could not save evaluation.", "danger");
+      }
+    };
+
+    init();
+  </script>
+</body>
+</html>

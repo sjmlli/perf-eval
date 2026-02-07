@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Risk Report</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="risk" data-title-key="title.risk" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.risk">Risk Report</h1>
+        <p class="page-subtitle" data-i18n="risk.subtitle">Employees below a threshold (HR/CEO). Exportable.</p>
+      </div>
+
+      <section class="card">
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px">
+          <div>
+            <label data-i18n="common.selectPeriod">Select period</label>
+            <select id="period"></select>
+          </div>
+
+          <div>
+            <label data-i18n="common.threshold">Threshold</label>
+            <input id="th" type="number" value="60" min="0" max="100"/>
+          </div>
+
+          <div style="display:flex; align-items:flex-end; gap:10px">
+            <button id="load" data-i18n="common.show">Show</button>
+            <button id="export" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+        </div>
+
+        <pre id="msg" style="display:none; margin-top:12px"></pre>
+        <div id="out" style="margin-top:12px"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api, download } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    function render(r) {
+      if (!r.rows || r.rows.length === 0) {
+        document.getElementById("out").innerHTML = `<p class='muted'>${t("risk.none")} ${r.threshold}.</p>`;
+        return;
+      }
+      const rows = r.rows.map(x => `
+        <tr>
+          <td>${x.employee_code}</td>
+          <td><b>${x.full_name}</b></td>
+          <td>${x.unit}</td>
+          <td class='small muted'>${x.job_title}</td>
+          <td><span class='badge danger'>${Number(x.final_score).toFixed(2)}</span></td>
+        </tr>
+      `).join("");
+
+      document.getElementById("out").innerHTML = `
+        <div class='card soft' style='margin:12px 0'>
+          <div><b>${t("common.threshold")}:</b> ${r.threshold}</div>
+          <div class='muted small'>${t("risk.count")}: ${r.rows.length}</div>
+        </div>
+        <table class='table'>
+          <thead>
+            <tr>
+              <th>${t("risk.code")}</th>
+              <th>${t("risk.name")}</th>
+              <th>${t("risk.unit")}</th>
+              <th class='small muted'>${t("risk.job")}</th>
+              <th>${t("risk.score")}</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    async function init() {
+      const periods = await api("/api/periods");
+      document.getElementById("period").innerHTML = periods.map(p => `<option value='${p.id}'>${p.name}</option>`).join("");
+    }
+
+    async function load() {
+      try {
+        const pid = document.getElementById("period").value;
+        const th = Number(document.getElementById("th").value);
+        const r = await api(`/api/reports/risk/${pid}?threshold=${encodeURIComponent(th)}`);
+        render(r);
+        document.getElementById("msg").style.display = "none";
+      } catch (e) {
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || t("common.accessDenied"), "danger");
+      }
+    }
+
+    document.getElementById("load").onclick = load;
+
+    document.getElementById("export").onclick = async () => {
+      try {
+        const pid = document.getElementById("period").value;
+        const th = Number(document.getElementById("th").value);
+        await download(`/api/reports/risk/${pid}.csv?threshold=${encodeURIComponent(th)}`, `risk-${pid}-th-${th}.csv`);
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    init().then(load);
+  </script>
+</body>
+</html>

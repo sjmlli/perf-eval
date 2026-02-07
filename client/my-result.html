@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>My Result</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="my-result" data-title-key="title.myResult" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.myResult">My Result</h1>
+        <p class="page-subtitle" data-i18n="my.subtitle">Transparency: final score, breakdown, and objection workflow.</p>
+      </div>
+
+      <section class="card">
+        <label data-i18n="common.selectPeriod">Select period</label>
+        <select id="period"></select>
+
+        <div class="row wrap">
+          <button id="load" data-i18n="common.show">Show</button>
+          <button id="refreshMyObs" class="secondary" data-i18n="common.refresh">Refresh</button>
+        </div>
+
+        <pre id="msg" style="display:none"></pre>
+        <div id="out" style="margin-top:12px"></div>
+
+        <hr class="sep"/>
+
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px">
+          <div class="card soft">
+            <div class="row wrap" style="justify-content: space-between; margin:0">
+              <h3 style="margin:0" data-i18n="my.ob.createTitle">Submit an objection / feedback</h3>
+              <span class="badge"><i data-lucide="message-square-warning"></i> OPEN</span>
+            </div>
+            <p class="muted small" style="margin:6px 0 10px 0" data-i18n="my.ob.hint">Objection will be linked to the selected period's evaluation.</p>
+            <textarea id="obMsg" rows="4" data-i18n-placeholder="my.ob.placeholder" placeholder="Write your objection or feedback..."></textarea>
+
+            <div class="row wrap">
+              <button id="sendOb" data-i18n="my.ob.send">Send objection</button>
+              <button id="clearOb" class="secondary" type="button" data-i18n="common.clear">Clear</button>
+            </div>
+            <pre id="obOut" style="display:none"></pre>
+          </div>
+
+          <div class="card soft">
+            <div class="row wrap" style="justify-content: space-between; margin:0">
+              <h3 style="margin:0" data-i18n="my.ob.statusTitle">My objections</h3>
+              <span class="badge"><i data-lucide="history"></i> History</span>
+            </div>
+            <p class="muted small" style="margin:6px 0 10px 0" data-i18n="my.ob.statusHint">Track statuses (OPEN/REVIEWED/RESOLVED) with responses.</p>
+            <div id="obList"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    let currentEvaluationId = null;
+
+    async function loadMyObjections() {
+      try {
+        if (!currentEvaluationId) {
+          document.getElementById("obList").innerHTML = `<p class="muted">${t("my.ob.noEval")}</p>`;
+          return;
+        }
+
+        const list = await api(`/api/objections/my?evaluation_id=${currentEvaluationId}`);
+        const box = document.getElementById("obList");
+        if (!list || list.length === 0) {
+          box.innerHTML = `<p class="muted">${t("my.ob.none")}</p>`;
+          return;
+        }
+
+        box.innerHTML = list.map(o => `
+          <div class="card" style="margin:12px 0">
+            <div class="row wrap" style="justify-content: space-between; margin:0">
+              <div>
+                <div><b>${t("common.status")}:</b> <span class="badge">${o.status}</span></div>
+                <div class="muted small">Period: ${o.period_name} • Created: ${o.created_at}</div>
+              </div>
+              <div class="muted small">ID: ${o.id}</div>
+            </div>
+            <div style="margin-top:10px"><b>${t("common.message")}:</b> ${o.message}</div>
+            <div style="margin-top:10px"><b>${t("my.ob.response")}:</b> ${o.response_message ?? "—"}</div>
+            <div class="muted small">Reviewed: ${o.reviewed_at ?? "—"} • Resolved: ${o.resolved_at ?? "—"}</div>
+          </div>
+        `).join("");
+      } catch (e) {
+        document.getElementById("obList").innerHTML = `<pre>${JSON.stringify(e, null, 2)}</pre>`;
+      }
+    }
+
+    async function init() {
+      const periods = await api("/api/periods");
+      document.getElementById("period").innerHTML = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    }
+
+    document.getElementById("load").onclick = async () => {
+      try {
+        const pid = document.getElementById("period").value;
+        const r = await api(`/api/results/my/${pid}`);
+        currentEvaluationId = r.evaluation.id;
+
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = `${t("my.finalScore")}: ${r.evaluation.final_score}`;
+
+        const rows = r.breakdown.map(x => `
+          <tr>
+            <td>${x.title}</td>
+            <td><span class="badge">${x.type}</span></td>
+            <td>${x.score}</td>
+            <td>${x.weight}</td>
+            <td class="muted small">${x.comment ?? ""}</td>
+          </tr>
+        `).join("");
+
+        const sumW = r.breakdown.reduce((a, x) => a + Number(x.weight), 0);
+        document.getElementById("out").innerHTML = `
+          <div class="card soft" style="margin: 12px 0">
+            <div><b>${t("my.employee")}:</b> ${r.employee.full_name}</div>
+            <div><b>${t("my.unitJob")}:</b> ${r.employee.unit} / ${r.employee.job_title}</div>
+            <div><b>${t("my.period")}:</b> ${r.evaluation.period_name}</div>
+            <div class="muted small"><b>${t("my.formula")}:</b> sum(score×weight) / sum(weight) = / ${sumW}</div>
+            <div class="muted small"><b>${t("my.evalId")}:</b> ${r.evaluation.id}</div>
+          </div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>${t("my.kpi")}</th>
+                <th>${t("my.type")}</th>
+                <th>${t("my.score")}</th>
+                <th>${t("my.weight")}</th>
+                <th>${t("my.comment")}</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+
+        await loadMyObjections();
+        toast(t("toast.loaded"), "ok");
+      } catch (e) {
+        currentEvaluationId = null;
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || "Could not load your result.", "danger");
+      }
+    };
+
+    document.getElementById("sendOb").onclick = async () => {
+      const obOut = document.getElementById("obOut");
+      try {
+        if (!currentEvaluationId) {
+          toast(t("my.ob.needLoad"), "danger");
+          return;
+        }
+        const message = document.getElementById("obMsg").value.trim();
+        if (!message) {
+          toast(t("my.ob.empty"), "danger");
+          return;
+        }
+
+        const r = await api("/api/objections", { method:"POST", body:{ evaluation_id: currentEvaluationId, message } });
+        obOut.style.display = "block";
+        obOut.textContent = `${t("my.ob.created")} ${r.id}`;
+        document.getElementById("obMsg").value = "";
+        toast(t("my.ob.createdShort"), "ok");
+        await loadMyObjections();
+      } catch (e) {
+        obOut.style.display = "block";
+        obOut.textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || "Could not send objection.", "danger");
+      }
+    };
+
+    document.getElementById("clearOb").onclick = () => {
+      document.getElementById("obMsg").value = "";
+      toast(t("toast.cleared"), "ok");
+    };
+
+    document.getElementById("refreshMyObs").onclick = async () => {
+      await loadMyObjections();
+      toast(t("toast.refreshed"), "ok");
+    };
+
+    init();
+  </script>
+</body>
+</html>

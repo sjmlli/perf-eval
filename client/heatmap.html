@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Heatmap</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="heatmap" data-title-key="title.heatmap" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.heatmap">Heatmap (Employee × KPI)</h1>
+        <p class="page-subtitle" data-i18n="heatmap.subtitle">Real database heatmap for HR/CEO analytics.</p>
+      </div>
+
+      <section class="card">
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px">
+          <div>
+            <label data-i18n="common.selectPeriod">Select period</label>
+            <select id="period"></select>
+          </div>
+          <div style="display:flex; align-items:flex-end; gap:10px">
+            <button id="load" data-i18n="common.show">Show</button>
+            <button id="export" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+        </div>
+
+        <pre id="msg" style="display:none; margin-top:12px"></pre>
+        <div id="tableWrap" style="overflow:auto; margin-top:12px"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api, download } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    function isDark() {
+      return document.documentElement.dataset.theme !== "light";
+    }
+
+    function colorForScore(score, min=0, max=100) {
+      // Map [min..max] to Hue [0..120] => red to green
+      const tt = Math.max(0, Math.min(1, (score - min) / (max - min)));
+      const hue = 120 * tt;
+      const light = isDark() ? 26 : 85;
+      const sat = isDark() ? 65 : 70;
+      return `hsl(${hue}, ${sat}%, ${light}%)`;
+    }
+
+    function renderHeatmap(data) {
+      const { kpis, matrix, scale } = data;
+
+      let html = `<table class="table">
+        <thead>
+          <tr>
+            <th>${t("heatmap.employee")}</th>
+            <th class="small">${t("heatmap.unitJob")}</th>
+            ${kpis.map(k => `<th>${k.title}<div class="muted small">${k.type}</div></th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+      `;
+
+      for (const row of matrix) {
+        html += `<tr>
+          <td><b>${row.full_name}</b></td>
+          <td class="small muted">${row.unit} / ${row.job_title}</td>
+          ${row.scores.map(s => {
+            if (s === null || s === undefined) return `<td class="muted">—</td>`;
+            const bg = colorForScore(s, scale.min, scale.max);
+            const fg = isDark() ? "rgba(255,255,255,.92)" : "rgba(15,23,42,.92)";
+            return `<td style="background:${bg}; color:${fg}"><b>${s}</b></td>`;
+          }).join("")}
+        </tr>`;
+      }
+
+      html += `</tbody></table>`;
+
+      const legend = `
+        <div class="card soft" style="margin:12px 0">
+          <div><b>${t("heatmap.legend")}</b> (0..100):</div>
+          <div class="row wrap">
+            ${[0,25,50,75,100].map(v => `<div class="badge" style="background:${colorForScore(v)}">${v}</div>`).join("")}
+          </div>
+        </div>
+      `;
+
+      document.getElementById("tableWrap").innerHTML = legend + html;
+    }
+
+    async function init() {
+      const periods = await api("/api/periods");
+      const sel = document.getElementById("period");
+      sel.innerHTML = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    }
+
+    document.getElementById("load").onclick = async () => {
+      try {
+        const pid = document.getElementById("period").value;
+        const data = await api(`/api/reports/heatmap/${pid}`);
+        renderHeatmap(data);
+        toast("Heatmap built.", "ok");
+        document.getElementById("msg").style.display = "none";
+      } catch (e) {
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || t("common.accessDenied"), "danger");
+      }
+    };
+
+    document.getElementById("export").onclick = async () => {
+      try {
+        const pid = document.getElementById("period").value;
+        await download(`/api/reports/heatmap/${pid}.csv`, `heatmap-employee-kpi-${pid}.csv`);
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    init();
+  </script>
+</body>
+</html>

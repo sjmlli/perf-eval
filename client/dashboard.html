@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-page="dashboard" data-title-key="title.dashboard" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.dashboard">Dashboard</h1>
+        <p class="page-subtitle" data-i18n="dash.subtitle">Executive overview for HR/CEO + quick insights.</p>
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="dash.top.title">Top performers</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="dash.top.hint">HR/CEO preview</p>
+            </div>
+            <span class="badge"><i data-lucide="trophy"></i> <span data-i18n="dash.kpiDriven">KPI-driven</span></span>
+          </div>
+
+          <label data-i18n="common.selectPeriod">Select period</label>
+          <select id="period"></select>
+
+          <div class="row wrap">
+            <button id="load" data-i18n="common.show">Show</button>
+            <button id="exportTop" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+
+          <ul id="top" class="muted" style="margin:0; padding-left:18px"></ul>
+          <pre id="topMsg" style="display:none"></pre>
+        </section>
+
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="dash.audit.title">Audit log</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="dash.audit.hint">Last 100 sensitive actions.</p>
+            </div>
+            <span class="badge"><i data-lucide="shield-check"></i> <span data-i18n="dash.audit.badge">Auditable</span></span>
+          </div>
+
+          <div class="row wrap" style="margin-top:10px">
+            <button id="refreshAudit" class="secondary" data-i18n="common.refresh">Refresh</button>
+            <button id="exportAudit" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+
+          <pre id="audit" style="max-height: 320px"></pre>
+        </section>
+
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="dash.trend.title">Unit trend</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="dash.trend.hint">Average score per period (HR/CEO).</p>
+            </div>
+            <span class="badge"><i data-lucide="line-chart"></i> <span data-i18n="dash.trend.badge">Trend</span></span>
+          </div>
+
+          <label data-i18n="common.selectUnit">Select unit</label>
+          <select id="unit"></select>
+
+          <div class="row wrap">
+            <button id="loadTrend" data-i18n="dash.trend.load">Load trend</button>
+            <button id="exportTrend" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+
+          <canvas id="chart" height="120"></canvas>
+          <pre id="trendMsg" style="display:none"></pre>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api, download } from "./api.js";
+    import { toast, t, getLang } from "./ui.js";
+
+    let chart = null;
+
+    function clearChart() {
+      if (chart) { chart.destroy(); chart = null; }
+    }
+
+    async function init() {
+      const periods = await api("/api/periods");
+      const sel = document.getElementById("period");
+      sel.innerHTML = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+
+      // Units for trend (may fail for non HR/CEO)
+      try {
+        const units = await api("/api/reports/units");
+        const uSel = document.getElementById("unit");
+        uSel.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join("");
+      } catch (e) {
+        document.getElementById("trendMsg").style.display = "block";
+        document.getElementById("trendMsg").textContent = t("common.accessDenied");
+      }
+
+      await refreshAudit();
+      try {
+        const u = document.getElementById("unit").value;
+        if (u) await loadTrend(u);
+      } catch {}
+    }
+
+    async function refreshAudit() {
+      try {
+        const a = await api("/api/audit");
+        document.getElementById("audit").textContent = JSON.stringify(a, null, 2);
+      } catch (e) {
+        document.getElementById("audit").textContent = t("common.accessDenied");
+      }
+    }
+
+    async function loadTrend(unit) {
+      try {
+        const rows = await api(`/api/reports/trend/unit/${encodeURIComponent(unit)}`);
+        const labels = rows.map(r => r.period_name);
+        const data = rows.map(r => Number(r.avg_score));
+
+        clearChart();
+        chart = new Chart(document.getElementById("chart"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [{ label: `AVG Score — ${unit}`, data }]
+          },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+        toast("Trend updated.", "ok");
+      } catch (e) {
+        document.getElementById("trendMsg").style.display = "block";
+        document.getElementById("trendMsg").textContent = JSON.stringify(e, null, 2);
+        toast("Could not load trend.", "danger");
+      }
+    }
+
+    document.getElementById("load").onclick = async () => {
+      try {
+        const pid = document.getElementById("period").value;
+        const rows = await api(`/api/reports/top-performers/${pid}`);
+        document.getElementById("top").innerHTML = rows.map(r => `<li><b>${r.full_name}</b> <span class="muted small">(${r.unit})</span> — <span class="badge ok">${Number(r.final_score).toFixed(2)}</span></li>`).join("");
+        document.getElementById("topMsg").style.display = "none";
+      } catch (e) {
+        document.getElementById("top").innerHTML = `<li class="muted">${t("common.accessDenied")}</li>`;
+        document.getElementById("topMsg").style.display = "block";
+        document.getElementById("topMsg").textContent = JSON.stringify(e, null, 2);
+        toast(t("common.accessDenied"), "danger");
+      }
+    };
+
+    document.getElementById("exportTop").onclick = async () => {
+      const pid = document.getElementById("period").value;
+      try {
+        await download(`/api/reports/top-performers/${pid}.csv`, `top-performers-${pid}.csv`);
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    document.getElementById("refreshAudit").onclick = refreshAudit;
+
+    document.getElementById("exportAudit").onclick = async () => {
+      try {
+        await download("/api/audit.csv", "audit-last-100.csv");
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    document.getElementById("loadTrend").onclick = async () => {
+      const unit = document.getElementById("unit").value;
+      if (unit) await loadTrend(unit);
+    };
+
+    document.getElementById("exportTrend").onclick = async () => {
+      try {
+        const unit = document.getElementById("unit").value;
+        await download(`/api/reports/trend/unit/${encodeURIComponent(unit)}/export.csv`, `trend-unit-${unit}.csv`);
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    init();
+  </script>
+</body>
+</html>

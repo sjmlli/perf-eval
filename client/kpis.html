@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>KPI Management</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="kpis" data-title-key="title.kpis" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.kpis">KPI Management</h1>
+        <p class="page-subtitle" data-i18n="kpis.subtitle">Create and manage KPIs (HR/CEO).</p>
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="kpis.create.title">Create KPI</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="kpis.create.hint">Requires HR/CEO</p>
+            </div>
+            <span class="badge"><i data-lucide="sliders"></i> KPI</span>
+          </div>
+
+          <label data-i18n="kpis.fields.title">Title</label>
+          <input id="title" data-i18n-placeholder="kpis.fields.titlePh" placeholder="e.g., Teamwork"/>
+
+          <label data-i18n="kpis.fields.type">Type</label>
+          <select id="type">
+            <option value="CORE" data-i18n="kpis.type.core">CORE (General)</option>
+            <option value="JOB" data-i18n="kpis.type.job">JOB (Role-specific)</option>
+            <option value="STRATEGIC" data-i18n="kpis.type.strategic">STRATEGIC (Organization)</option>
+          </select>
+
+          <label data-i18n="kpis.fields.range">Scale (min/max)</label>
+          <div class="row">
+            <input id="min" type="number" value="0"/>
+            <input id="max" type="number" value="100"/>
+          </div>
+
+          <div class="row wrap">
+            <button id="save" data-i18n="common.save">Save</button>
+            <button id="reset" class="secondary" type="button" data-i18n="common.reset">Reset</button>
+          </div>
+
+          <pre id="msg" style="display:none"></pre>
+        </section>
+
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="kpis.list.title">KPI list</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="kpis.list.hint">Read-only list from database.</p>
+            </div>
+            <button id="refresh" class="secondary" data-i18n="common.refresh">Refresh</button>
+          </div>
+
+          <table class="table" style="margin-top:12px">
+            <thead>
+              <tr>
+                <th data-i18n="kpis.table.title">Title</th>
+                <th data-i18n="kpis.table.type">Type</th>
+                <th data-i18n="kpis.table.range">Range</th>
+              </tr>
+            </thead>
+            <tbody id="list"></tbody>
+          </table>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    async function load() {
+      const kpis = await api("/api/kpis");
+      const tb = document.getElementById("list");
+      tb.innerHTML = kpis.map(k => `
+        <tr>
+          <td><b>${k.title}</b></td>
+          <td><span class="badge">${k.type}</span></td>
+          <td class="muted">${k.scale_min} … ${k.scale_max}</td>
+        </tr>
+      `).join("");
+    }
+
+    document.getElementById("refresh").onclick = load;
+
+    document.getElementById("reset").onclick = () => {
+      document.getElementById("title").value = "";
+      document.getElementById("type").value = "CORE";
+      document.getElementById("min").value = 0;
+      document.getElementById("max").value = 100;
+      toast(t("toast.reset"), "ok");
+    };
+
+    document.getElementById("save").onclick = async () => {
+      try {
+        const title = document.getElementById("title").value.trim();
+        const type = document.getElementById("type").value;
+        const scale_min = Number(document.getElementById("min").value);
+        const scale_max = Number(document.getElementById("max").value);
+        if (!title) {
+          toast("Title is required.", "danger");
+          return;
+        }
+        await api("/api/kpis", { method:"POST", body:{ title, type, scale_min, scale_max } });
+        toast("KPI saved.", "ok");
+        document.getElementById("msg").style.display = "none";
+        await load();
+      } catch (e) {
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || "Could not save KPI.", "danger");
+      }
+    };
+
+    load();
+  </script>
+</body>
+</html>

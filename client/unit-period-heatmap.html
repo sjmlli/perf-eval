@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Unit × Period Heatmap</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="unit-period-heatmap" data-title-key="title.unitPeriodHeatmap" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.unitPeriodHeatmap">Heatmap (Unit × Period)</h1>
+        <p class="page-subtitle" data-i18n="uheat.subtitle">Average score per unit across periods (HR/CEO).</p>
+      </div>
+
+      <section class="card">
+        <div class="row wrap" style="justify-content: space-between; margin:0">
+          <div class="muted small" data-i18n="uheat.hint">Use this for trend analysis and unit comparisons.</div>
+          <div class="row wrap" style="margin:0">
+            <button id="load" data-i18n="common.show">Show</button>
+            <button id="export" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+        </div>
+
+        <pre id="msg" style="display:none; margin-top:12px"></pre>
+        <div id="tableWrap" style="overflow:auto; margin-top:12px"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api, download } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    function isDark() {
+      return document.documentElement.dataset.theme !== "light";
+    }
+
+    function colorForScore(score, min=0, max=100) {
+      const tt = Math.max(0, Math.min(1, (score - min) / (max - min)));
+      const hue = 120 * tt;
+      const light = isDark() ? 26 : 85;
+      const sat = isDark() ? 65 : 70;
+      return `hsl(${hue}, ${sat}%, ${light}%)`;
+    }
+
+    function renderHeatmap(data) {
+      const { periods, matrix, scale } = data;
+
+      const head = `<tr><th>${t("uheat.unit")}</th>${periods.map(p => `<th>${p.name}<div class='muted small'>${p.start_date}</div></th>`).join("")}</tr>`;
+
+      const body = matrix.map(r => {
+        const cells = r.values.map((v, idx) => {
+          if (v === null || v === undefined) return `<td class='muted'>—<div class='small muted'>n=${r.counts[idx] ?? 0}</div></td>`;
+          const bg = colorForScore(v, scale.min, scale.max);
+          const fg = isDark() ? "rgba(255,255,255,.92)" : "rgba(15,23,42,.92)";
+          return `<td style='background:${bg}; color:${fg}'><b>${Number(v).toFixed(1)}</b><div class='small muted'>n=${r.counts[idx] ?? 0}</div></td>`;
+        }).join("");
+        return `<tr><td><b>${r.unit}</b></td>${cells}</tr>`;
+      }).join("");
+
+      const legend = `
+        <div class="card soft" style="margin:12px 0">
+          <div><b>${t("heatmap.legend")}</b> (0..100):</div>
+          <div class="row wrap">
+            ${[0,25,50,75,100].map(v => `<div class="badge" style="background:${colorForScore(v)}">${v}</div>`).join("")}
+          </div>
+        </div>
+      `;
+
+      document.getElementById("tableWrap").innerHTML = legend + `<table class='table'><thead>${head}</thead><tbody>${body}</tbody></table>`;
+    }
+
+    async function load() {
+      try {
+        const data = await api("/api/reports/heatmap-unit-period");
+        renderHeatmap(data);
+        toast("Heatmap built.", "ok");
+        document.getElementById("msg").style.display = "none";
+      } catch (e) {
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || t("common.accessDenied"), "danger");
+      }
+    }
+
+    document.getElementById("load").onclick = load;
+
+    document.getElementById("export").onclick = async () => {
+      try {
+        await download("/api/reports/heatmap-unit-period.csv", "heatmap-unit-period.csv");
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    load();
+  </script>
+</body>
+</html>

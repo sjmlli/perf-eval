@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Periods</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="periods" data-title-key="title.periods" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.periods">Period Management</h1>
+        <p class="page-subtitle" data-i18n="periods.subtitle">Define evaluation periods and close them for auditability (HR/CEO).</p>
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <h2 style="margin:0" data-i18n="periods.create.title">Create evaluation period</h2>
+          <p class="muted small" style="margin:6px 0 0 0" data-i18n="periods.create.hint">Requires HR/CEO</p>
+
+          <label data-i18n="periods.fields.name">Period name</label>
+          <input id="name" data-i18n-placeholder="periods.fields.namePh" placeholder="e.g., Q1-2026"/>
+
+          <label data-i18n="periods.fields.type">Type</label>
+          <select id="ptype">
+            <option value="MONTHLY" data-i18n="periods.type.monthly">MONTHLY</option>
+            <option value="QUARTERLY" data-i18n="periods.type.quarterly">QUARTERLY</option>
+            <option value="YEARLY" data-i18n="periods.type.yearly">YEARLY</option>
+          </select>
+
+          <label data-i18n="periods.fields.dates">Start / End</label>
+          <div class="row">
+            <input id="start" type="date"/>
+            <input id="end" type="date"/>
+          </div>
+
+          <div class="row wrap">
+            <button id="save" data-i18n="common.create">Create</button>
+            <button id="clear" class="secondary" type="button" data-i18n="common.clear">Clear</button>
+          </div>
+
+          <pre id="msg" style="display:none"></pre>
+        </section>
+
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="periods.list.title">Periods</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="periods.list.hint">Close a period to make it read-only for managers.</p>
+            </div>
+            <button id="refresh" class="secondary" data-i18n="common.refresh">Refresh</button>
+          </div>
+
+          <table class="table" style="margin-top:12px">
+            <thead>
+              <tr>
+                <th data-i18n="periods.table.name">Name</th>
+                <th data-i18n="periods.table.type">Type</th>
+                <th data-i18n="periods.table.range">Range</th>
+                <th data-i18n="periods.table.status">Status</th>
+                <th data-i18n="periods.table.actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="list"></tbody>
+          </table>
+          <pre id="msg2" style="display:none; margin-top:12px"></pre>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    async function load() {
+      const periods = await api("/api/periods");
+      const tb = document.getElementById("list");
+      tb.innerHTML = periods.map(p => `
+        <tr>
+          <td><b>${p.name}</b></td>
+          <td><span class="badge">${p.period_type}</span></td>
+          <td class="muted">${p.start_date} … ${p.end_date}</td>
+          <td><span class="badge ${p.status === "OPEN" ? "ok" : "warn"}">${p.status}</span></td>
+          <td>
+            ${p.status === "OPEN" ? `<button class="ghost" data-close="${p.id}">${t("common.close")}</button>` : `<span class="muted small">—</span>`}
+          </td>
+        </tr>
+      `).join("");
+
+      document.querySelectorAll("button[data-close]").forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            await api(`/api/periods/${btn.dataset.close}/close`, { method:"POST" });
+            toast("Period closed.", "ok");
+            await load();
+          } catch (e) {
+            const box = document.getElementById("msg2");
+            box.style.display = "block";
+            box.textContent = JSON.stringify(e, null, 2);
+            toast("Could not close period.", "danger");
+          }
+        };
+      });
+    }
+
+    document.getElementById("refresh").onclick = load;
+
+    document.getElementById("clear").onclick = () => {
+      document.getElementById("name").value = "";
+      document.getElementById("ptype").value = "MONTHLY";
+      document.getElementById("start").value = "";
+      document.getElementById("end").value = "";
+      toast(t("toast.cleared"), "ok");
+    };
+
+    document.getElementById("save").onclick = async () => {
+      const msg = document.getElementById("msg");
+      try {
+        const name = document.getElementById("name").value.trim();
+        const period_type = document.getElementById("ptype").value;
+        const start_date = document.getElementById("start").value;
+        const end_date = document.getElementById("end").value;
+        if (!name || !start_date || !end_date) {
+          toast("Please fill all fields.", "danger");
+          return;
+        }
+        await api("/api/periods", { method:"POST", body:{ name, period_type, start_date, end_date } });
+        msg.style.display = "none";
+        toast("Period created.", "ok");
+        await load();
+      } catch (e) {
+        msg.style.display = "block";
+        msg.textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || "Could not create period.", "danger");
+      }
+    };
+
+    load();
+  </script>
+</body>
+</html>

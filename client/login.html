@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Sign in</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="login" data-title-key="title.login" data-layout="auth">
+  <header id="topbar"></header>
+
+  <div class="auth-wrap">
+    <section class="card auth-card">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="login.heading">Welcome back</h1>
+        <p class="page-subtitle" data-i18n="login.subtitle">Use demo accounts below to explore the system.</p>
+      </div>
+
+      <label for="u" data-i18n="login.username">Username</label>
+      <input id="u" autocomplete="username" data-i18n-placeholder="login.username" placeholder="Username"/>
+
+      <label for="p" data-i18n="login.password">Password</label>
+      <input id="p" type="password" autocomplete="current-password" data-i18n-placeholder="login.password" placeholder="Password"/>
+
+      <div class="row wrap" style="margin-top:14px">
+        <button id="btn" style="flex:1" data-i18n="login.signIn">Sign in</button>
+        <button id="fillDemo" class="secondary" style="flex:1" type="button" data-i18n="login.fillDemo">Fill demo</button>
+      </div>
+
+      <pre id="msg" style="display:none; margin-top:12px"></pre>
+    </section>
+
+    <section class="card auth-card soft">
+      <h2 style="margin:0 0 10px 0" data-i18n="login.demoTitle">Demo accounts (password: 1234)</h2>
+
+      <div class="grid" style="grid-template-columns: 1fr; gap:10px">
+        <div class="card soft">
+          <div class="row wrap" style="margin:0">
+            <span class="badge"><span class="kbd">ceo</span> <span data-i18n="login.demoCeo">CEO: ceo</span></span>
+            <span class="badge"><span class="kbd">hr</span> <span data-i18n="login.demoHr">HR: hr</span></span>
+            <span class="badge"><span class="kbd">mgr</span> <span data-i18n="login.demoMgr">Manager: mgr / mgr2</span></span>
+            <span class="badge"><span class="kbd">emp</span> <span data-i18n="login.demoEmp">Employee: emp / emp2</span></span>
+          </div>
+          <p class="muted small" style="margin:10px 0 0 0">
+            Tip: start with <span class="kbd">hr</span> to create KPIs/templates/periods.
+          </p>
+        </div>
+
+        <div class="card soft">
+          <h3 style="margin:0 0 6px 0" data-i18n="login.teamLabel">Team members</h3>
+          <p class="muted small" style="margin:0 0 10px 0" data-i18n="login.teamHint">Replace with your names before submission.</p>
+          <textarea id="team" rows="4" placeholder="e.g., Soheil Jafari, ..."></textarea>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    const u = document.getElementById("u");
+    const p = document.getElementById("p");
+    const msg = document.getElementById("msg");
+
+    document.getElementById("fillDemo").onclick = () => {
+      u.value = "hr";
+      p.value = "1234";
+      msg.style.display = "none";
+      msg.textContent = "";
+      toast(t("toast.filledDemo"), "ok");
+    };
+
+    document.getElementById("btn").onclick = async () => {
+      try {
+        const username = u.value.trim();
+        const password = p.value.trim();
+        if (!username || !password) {
+          toast("Enter username and password.", "danger");
+          return;
+        }
+        const r = await api("/api/login", { method:"POST", body:{ username, password } });
+        localStorage.setItem("token", r.token);
+        localStorage.setItem("role", r.role);
+        localStorage.setItem("username", r.username);
+        toast(t("toast.signedIn"), "ok");
+        setTimeout(() => location.replace("./dashboard.html"), 250);
+      } catch (e) {
+        msg.style.display = "block";
+        msg.textContent = JSON.stringify(e, null, 2);
+        toast(e?.error || "Login failed.", "danger");
+      }
+    };
+  </script>
+</body>
+</html>

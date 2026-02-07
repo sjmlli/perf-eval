@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Objections</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="objections" data-title-key="title.objections" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.objections">Objection Workflow</h1>
+        <p class="page-subtitle" data-i18n="obj.subtitle">OPEN → REVIEWED → RESOLVED. HR/CEO (all) • Manager (direct reports).</p>
+      </div>
+
+      <section class="card">
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px">
+          <div>
+            <label data-i18n="common.statusFilter">Status filter</label>
+            <select id="status">
+              <option value="" data-i18n="obj.all">All</option>
+              <option value="OPEN">OPEN</option>
+              <option value="REVIEWED">REVIEWED</option>
+              <option value="RESOLVED">RESOLVED</option>
+            </select>
+          </div>
+
+          <div style="display:flex; align-items:flex-end; gap:10px">
+            <button id="refresh" data-i18n="common.refresh">Refresh</button>
+            <button id="export" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
+          </div>
+        </div>
+
+        <pre id="msg" style="display:none; margin-top:12px"></pre>
+        <div id="list" style="margin-top:12px"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api, download } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    function badge(status) {
+      const cls = status === "OPEN" ? "warn" : status === "RESOLVED" ? "ok" : "";
+      return `<span class='badge ${cls}'>${status}</span>`;
+    }
+
+    function render(items) {
+      const box = document.getElementById("list");
+      if (!items || items.length === 0) {
+        box.innerHTML = `<p class='muted'>${t("obj.none")}</p>`;
+        return;
+      }
+
+      box.innerHTML = items.map(o => {
+        const resp = o.response_message ?? "";
+        return `
+          <div class='card soft' style='margin:12px 0'>
+            <div class='row wrap' style='justify-content: space-between; margin:0'>
+              <div style='min-width: 280px'>
+                <div>
+                  <b>${o.full_name}</b>
+                  <span class='muted small'>(${o.unit} / ${o.job_title})</span>
+                </div>
+                <div class='muted small'>Period: ${o.period_name} • Created: ${o.created_at}</div>
+              </div>
+              <div>${badge(o.status)}</div>
+            </div>
+
+            <div style='margin-top:10px'><b>${t("obj.message")}:</b> ${o.message}</div>
+
+            <div style='margin-top:12px'>
+              <label class='small muted' style='margin:0 0 6px 0'>${t("obj.response")}</label>
+              <textarea rows='3' data-resp='${o.id}' placeholder='${t("obj.responsePh")}'>${resp}</textarea>
+            </div>
+
+            <div class='row wrap'>
+              <button class='secondary' data-review='${o.id}'>${t("obj.markReviewed")}</button>
+              <button class='ghost' data-resolve='${o.id}'>${t("obj.markResolved")}</button>
+            </div>
+            <div class='muted small'>Evaluation ID: ${o.evaluation_id}</div>
+          </div>
+        `;
+      }).join("");
+
+      // wire actions
+      box.querySelectorAll("button[data-review]").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.review;
+          const response_message = box.querySelector(`textarea[data-resp='${id}']`).value;
+          try {
+            await api(`/api/objections/${id}/review`, { method: "POST", body: { response_message } });
+            toast(t("obj.updated"), "ok");
+            await load();
+          } catch (e) {
+            document.getElementById("msg").style.display = "block";
+            document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+            toast("Update failed.", "danger");
+          }
+        };
+      });
+
+      box.querySelectorAll("button[data-resolve]").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.resolve;
+          const response_message = box.querySelector(`textarea[data-resp='${id}']`).value;
+          try {
+            await api(`/api/objections/${id}/resolve`, { method: "POST", body: { response_message } });
+            toast(t("obj.resolved"), "ok");
+            await load();
+          } catch (e) {
+            document.getElementById("msg").style.display = "block";
+            document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+            toast("Resolve failed.", "danger");
+          }
+        };
+      });
+    }
+
+    async function load() {
+      const status = document.getElementById("status").value;
+      try {
+        const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+        const items = await api(`/api/objections${qs}`);
+        render(items);
+        document.getElementById("msg").style.display = "none";
+      } catch (e) {
+        document.getElementById("msg").style.display = "block";
+        document.getElementById("msg").textContent = JSON.stringify(e, null, 2);
+        document.getElementById("list").innerHTML = "";
+        toast(e?.error || t("common.accessDenied"), "danger");
+      }
+    }
+
+    document.getElementById("refresh").onclick = load;
+    document.getElementById("status").onchange = load;
+
+    document.getElementById("export").onclick = async () => {
+      try {
+        await download("/api/objections.csv", "objections.csv");
+        toast(t("toast.downloaded"), "ok");
+      } catch (e) {
+        toast(t("toast.exportFailed"), "danger");
+      }
+    };
+
+    load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>KPI Templates</title>
+  <link rel="stylesheet" href="./app.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="templates" data-title-key="title.templates" data-requires_auth="1" data-requires-auth="1">
+  <header id="topbar"></header>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+
+    <main class="content">
+      <div class="page-head">
+        <h1 class="page-title" data-i18n="title.templates">KPI Template Management</h1>
+        <p class="page-subtitle" data-i18n="tpl.subtitle">Templates define weights for fairness and comparability (HR/CEO).</p>
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="tpl.create.title">Create KPI Template</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="tpl.create.hint">Weights must sum to 100.</p>
+            </div>
+            <span class="badge"><i data-lucide="layers"></i> Template</span>
+          </div>
+
+          <label data-i18n="tpl.fields.unit">Unit (optional)</label>
+          <input id="unit" data-i18n-placeholder="tpl.fields.unitPh" placeholder="e.g., Sales (empty = all units)"/>
+
+          <label data-i18n="tpl.fields.job">Job title (optional)</label>
+          <input id="job" data-i18n-placeholder="tpl.fields.jobPh" placeholder="e.g., Sales Specialist (empty = all jobs)"/>
+
+          <label data-i18n="tpl.fields.version">Version</label>
+          <input id="version" type="number" value="1" min="1"/>
+
+          <div class="row wrap" style="justify-content: space-between">
+            <h3 style="margin:10px 0" data-i18n="tpl.selectKpis">Select KPIs & weights</h3>
+            <span id="sumW" class="badge warn">ΣW = 0</span>
+          </div>
+
+          <div id="kpi-list"></div>
+
+          <div class="row wrap">
+            <button id="create" data-i18n="tpl.btn.create">Create template</button>
+            <button id="reset" class="secondary" type="button" data-i18n="common.reset">Reset</button>
+          </div>
+          <pre id="msg" style="display:none"></pre>
+        </section>
+
+        <section class="card">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <h2 style="margin:0" data-i18n="tpl.list.title">Existing templates</h2>
+              <p class="muted small" style="margin:6px 0 0 0" data-i18n="tpl.list.hint">Latest templates appear first.</p>
+            </div>
+            <button id="refresh" class="secondary" data-i18n="common.refresh">Refresh</button>
+          </div>
+
+          <div id="tpls" style="margin-top:12px"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./ui.js"></script>
+  <script type="module">
+    import { api } from "./api.js";
+    import { toast, t } from "./ui.js";
+
+    function sumWeights(items) {
+      return items.reduce((a, x) => a + (Number(x.weight) || 0), 0);
+    }
+
+    function updateSumBadge() {
+      const items = [];
+      document.querySelectorAll("input[data-chk]").forEach(chk => {
+        if (chk.checked) {
+          const kpi_id = chk.dataset.chk;
+          const weight = Number(document.querySelector(`input[data-w="${kpi_id}"]`).value);
+          items.push({ kpi_id, weight });
+        }
+      });
+      const sumW = sumWeights(items);
+      const badge = document.getElementById("sumW");
+      badge.textContent = `ΣW = ${sumW}`;
+      badge.classList.remove("ok","warn","danger");
+      if (sumW === 100) badge.classList.add("ok");
+      else if (sumW === 0) badge.classList.add("warn");
+      else badge.classList.add("danger");
+    }
+
+    async function loadKpis() {
+      const kpis = await api("/api/kpis");
+      const el = document.getElementById("kpi-list");
+      el.innerHTML = kpis.map(k => `
+        <div class="row">
+          <label style="flex:2; margin:0">
+            <input type="checkbox" data-chk="${k.id}" />
+            <b>${k.title}</b> <span class="badge">${k.type}</span>
+          </label>
+          <input style="flex:1" type="number" min="1" value="10" data-w="${k.id}" />
+        </div>
+      `).join("");
+
+      el.querySelectorAll("input[data-chk], input[data-w]").forEach(inp => {
+        inp.addEventListener("input", updateSumBadge);
+        inp.addEventListener("change", updateSumBadge);
+      });
+
+      updateSumBadge();
+    }
+
+    async function loadTemplates() {
+      const tpls = await api("/api/kpi-templates");
+      const box = document.getElementById("tpls");
+      box.innerHTML = tpls.map(tpl => `
+        <div class="card soft" style="margin:12px 0">
+          <div class="row wrap" style="justify-content: space-between; margin:0">
+            <div>
+              <div><b>ID:</b> ${tpl.id} <span class="badge">${tpl.is_active ? "ACTIVE" : "INACTIVE"}</span></div>
+              <div class="muted small">Scope: unit=${tpl.applies_to_unit ?? "*"} | job=${tpl.applies_to_job_title ?? "*"}</div>
+              <div class="muted small">Version: ${tpl.version}</div>
+            </div>
+            <div class="row wrap" style="margin:0">
+              <button class="secondary" data-items="${tpl.id}" data-i18n="tpl.btn.showItems">View items</button>
+              <button class="ghost" data-deact="${tpl.id}" data-i18n="tpl.btn.deactivate">Deactivate</button>
+            </div>
+          </div>
+          <pre id="items-${tpl.id}" style="display:none; margin-top:10px"></pre>
+        </div>
+      `).join("");
+
+      // Apply translations inside newly inserted nodes
+      document.querySelectorAll("#tpls [data-i18n]").forEach(el => {
+        el.textContent = t(el.dataset.i18n);
+      });
+
+      box.querySelectorAll("button[data-items]").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.items;
+          const rows = await api(`/api/kpi-templates/${id}/items`);
+          const pre = document.getElementById(`items-${id}`);
+          pre.style.display = "block";
+          pre.textContent = JSON.stringify(rows, null, 2);
+          toast("Template items loaded.", "ok");
+        };
+      });
+
+      box.querySelectorAll("button[data-deact]").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.deact;
+          await api(`/api/kpi-templates/${id}/deactivate`, { method:"POST" });
+          toast("Template deactivated.", "ok");
+          await loadTemplates();
+        };
+      });
+    }
+
+    document.getElementById("create").onclick = async () => {
+      const msg = document.getElementById("msg");
+      try {
+        const applies_to_unit = document.getElementById("unit").value.trim() || null;
+        const applies_to_job_title = document.getElementById("job").value.trim() || null;
+        const version = Number(document.getElementById("version").value) || 1;
+
+        const items = [];
+        document.querySelectorAll("input[data-chk]").forEach(chk => {
+          if (chk.checked) {
+            const kpi_id = chk.dataset.chk;
+            const weight = Number(document.querySelector(`input[data-w="${kpi_id}"]`).value);
+            items.push({ kpi_id, weight });
+          }
+        });
+
+        if (items.length === 0) {
+          toast(t("tpl.msg.selectOne"), "danger");
+          throw { error: t("tpl.msg.selectOne") };
+        }
+
+        const sumW = sumWeights(items);
+        if (sumW !== 100) {
+          toast(t("tpl.msg.sum100") + ` (ΣW=${sumW})`, "danger");
+          throw { error: t("tpl.msg.sum100"), sumW };
+        }
+
+        const r = await api("/api/kpi-templates/full", { method:"POST", body:{ applies_to_unit, applies_to_job_title, version, items } });
+        msg.style.display = "none";
+        toast(`Template created: ${r.id}`, "ok");
+        await loadTemplates();
+      } catch (e) {
+        msg.style.display = "block";
+        msg.textContent = JSON.stringify(e, null, 2);
+      }
+    };
+
+    document.getElementById("reset").onclick = async () => {
+      document.getElementById("unit").value = "";
+      document.getElementById("job").value = "";
+      document.getElementById("version").value = 1;
+      document.querySelectorAll("input[data-chk]").forEach(chk => chk.checked = false);
+      document.querySelectorAll("input[data-w]").forEach(w => w.value = 10);
+      updateSumBadge();
+      toast(t("toast.reset"), "ok");
+    };
+
+    document.getElementById("refresh").onclick = loadTemplates;
+
+    loadKpis().then(loadTemplates);
+  </script>
+</body>
+</html>
