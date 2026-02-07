@@ -6,11 +6,24 @@ export function getRole() {
   return localStorage.getItem("role");
 }
 
-// Base URL: same-origin. Vercel rewrites /api/* -> Render
+// All client calls should be like: api("/periods") not api("/api/periods")
+// But to be robust, we normalize if someone passes "/api/..."
 const API_BASE = "/api";
 
+function normalizePath(path) {
+  if (!path) return "/";
+  // ensure leading slash
+  let p = path.startsWith("/") ? path : `/${path}`;
+  // if caller mistakenly included /api prefix, strip it
+  if (p === "/api") return "/";
+  if (p.startsWith("/api/")) p = p.slice(4); // remove "/api"
+  return p;
+}
+
 export async function api(path, { method = "GET", body } = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const p = normalizePath(path);
+
+  const res = await fetch(`${API_BASE}${p}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -24,8 +37,11 @@ export async function api(path, { method = "GET", body } = {}) {
   return data;
 }
 
+// Download helper (CSV / files) with Authorization header
 export async function download(path, filename) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const p = normalizePath(path);
+
+  const res = await fetch(`${API_BASE}${p}`, {
     method: "GET",
     headers: {
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
@@ -34,7 +50,9 @@ export async function download(path, filename) {
 
   if (!res.ok) {
     let err = {};
-    try { err = await res.json(); } catch {}
+    try {
+      err = await res.json();
+    } catch {}
     throw err;
   }
 
