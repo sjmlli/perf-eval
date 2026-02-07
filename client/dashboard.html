@@ -79,7 +79,11 @@
             <button id="exportTrend" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
           </div>
 
-          <canvas id="chart" height="120"></canvas>
+          <!-- ✅ Fix: stable height container to prevent Chart.js resize loop -->
+          <div style="height:240px">
+            <canvas id="chart"></canvas>
+          </div>
+
           <pre id="trendMsg" style="display:none"></pre>
         </section>
       </div>
@@ -91,7 +95,7 @@
   <script type="module" src="./ui.js"></script>
   <script type="module">
     import { api, download } from "./api.js";
-    import { toast, t, getLang } from "./ui.js";
+    import { toast, t } from "./ui.js";
 
     let chart = null;
 
@@ -100,13 +104,14 @@
     }
 
     async function init() {
-      const periods = await api("/api/periods");
+      // ✅ Fix: paths must NOT start with /api because api.js already uses API_BASE="/api"
+      const periods = await api("/periods");
       const sel = document.getElementById("period");
       sel.innerHTML = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
 
       // Units for trend (may fail for non HR/CEO)
       try {
-        const units = await api("/api/reports/units");
+        const units = await api("/reports/units");
         const uSel = document.getElementById("unit");
         uSel.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join("");
       } catch (e) {
@@ -115,6 +120,7 @@
       }
 
       await refreshAudit();
+
       try {
         const u = document.getElementById("unit").value;
         if (u) await loadTrend(u);
@@ -123,7 +129,7 @@
 
     async function refreshAudit() {
       try {
-        const a = await api("/api/audit");
+        const a = await api("/audit");
         document.getElementById("audit").textContent = JSON.stringify(a, null, 2);
       } catch (e) {
         document.getElementById("audit").textContent = t("common.accessDenied");
@@ -132,19 +138,26 @@
 
     async function loadTrend(unit) {
       try {
-        const rows = await api(`/api/reports/trend/unit/${encodeURIComponent(unit)}`);
+        const rows = await api(`/reports/trend/unit/${encodeURIComponent(unit)}`);
         const labels = rows.map(r => r.period_name);
         const data = rows.map(r => Number(r.avg_score));
 
         clearChart();
-        chart = new Chart(document.getElementById("chart"), {
+
+        const ctx = document.getElementById("chart").getContext("2d");
+        chart = new Chart(ctx, {
           type: "line",
           data: {
             labels,
             datasets: [{ label: `AVG Score — ${unit}`, data }]
           },
-          options: { responsive: true, maintainAspectRatio: false }
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false
+          }
         });
+
         toast("Trend updated.", "ok");
       } catch (e) {
         document.getElementById("trendMsg").style.display = "block";
@@ -156,8 +169,10 @@
     document.getElementById("load").onclick = async () => {
       try {
         const pid = document.getElementById("period").value;
-        const rows = await api(`/api/reports/top-performers/${pid}`);
-        document.getElementById("top").innerHTML = rows.map(r => `<li><b>${r.full_name}</b> <span class="muted small">(${r.unit})</span> — <span class="badge ok">${Number(r.final_score).toFixed(2)}</span></li>`).join("");
+        const rows = await api(`/reports/top-performers/${pid}`);
+        document.getElementById("top").innerHTML = rows
+          .map(r => `<li><b>${r.full_name}</b> <span class="muted small">(${r.unit})</span> — <span class="badge ok">${Number(r.final_score).toFixed(2)}</span></li>`)
+          .join("");
         document.getElementById("topMsg").style.display = "none";
       } catch (e) {
         document.getElementById("top").innerHTML = `<li class="muted">${t("common.accessDenied")}</li>`;
@@ -170,7 +185,7 @@
     document.getElementById("exportTop").onclick = async () => {
       const pid = document.getElementById("period").value;
       try {
-        await download(`/api/reports/top-performers/${pid}.csv`, `top-performers-${pid}.csv`);
+        await download(`/reports/top-performers/${pid}.csv`, `top-performers-${pid}.csv`);
         toast(t("toast.downloaded"), "ok");
       } catch (e) {
         toast(t("toast.exportFailed"), "danger");
@@ -181,7 +196,7 @@
 
     document.getElementById("exportAudit").onclick = async () => {
       try {
-        await download("/api/audit.csv", "audit-last-100.csv");
+        await download("/audit.csv", "audit-last-100.csv");
         toast(t("toast.downloaded"), "ok");
       } catch (e) {
         toast(t("toast.exportFailed"), "danger");
@@ -196,7 +211,7 @@
     document.getElementById("exportTrend").onclick = async () => {
       try {
         const unit = document.getElementById("unit").value;
-        await download(`/api/reports/trend/unit/${encodeURIComponent(unit)}/export.csv`, `trend-unit-${unit}.csv`);
+        await download(`/reports/trend/unit/${encodeURIComponent(unit)}/export.csv`, `trend-unit-${unit}.csv`);
         toast(t("toast.downloaded"), "ok");
       } catch (e) {
         toast(t("toast.exportFailed"), "danger");
