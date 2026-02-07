@@ -10,7 +10,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* خیلی مهم: برای قطع Resize Loop */
+    .chart-wrap {
+      height: 260px;     /* هر عددی دوست داری */
+      width: 100%;
+      position: relative;
+    }
+    #chart {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+  </style>
 </head>
+
 <body data-page="dashboard" data-title-key="title.dashboard" data-requires-auth="1">
   <header id="topbar"></header>
 
@@ -79,7 +94,11 @@
             <button id="exportTrend" class="secondary" data-i18n="common.exportCsv">Export CSV</button>
           </div>
 
-          <canvas id="chart" height="120"></canvas>
+          <!-- مهم: wrapper با ارتفاع ثابت -->
+          <div class="chart-wrap">
+            <canvas id="chart"></canvas>
+          </div>
+
           <pre id="trendMsg" style="display:none"></pre>
         </section>
       </div>
@@ -94,50 +113,37 @@
     import { toast, t } from "./ui.js";
 
     let chart = null;
+    let trendLoading = false;
 
     function clearChart() {
-      if (chart) { chart.destroy(); chart = null; }
-    }
-
-    function showTrendMsg(msg) {
-      const el = document.getElementById("trendMsg");
-      el.style.display = "block";
-      el.textContent = msg;
-    }
-
-    function hideTrendMsg() {
-      const el = document.getElementById("trendMsg");
-      el.style.display = "none";
-      el.textContent = "";
+      if (chart) {
+        try { chart.destroy(); } catch {}
+        chart = null;
+      }
     }
 
     async function init() {
-      // ✅ اینجا دیگه /api نداریم
-      const periods = await api("/periods");
+      const periods = await api("/api/periods");
       const sel = document.getElementById("period");
       sel.innerHTML = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
 
       // Units for trend (may fail for non HR/CEO)
       try {
-        const units = await api("/reports/units");
+        const units = await api("/api/reports/units");
         const uSel = document.getElementById("unit");
         uSel.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join("");
+        // ❗️دیگه اینجا loadTrend خودکار نمی‌زنیم تا هنگ نشه
       } catch (e) {
-        showTrendMsg(t("common.accessDenied"));
+        document.getElementById("trendMsg").style.display = "block";
+        document.getElementById("trendMsg").textContent = t("common.accessDenied");
       }
 
       await refreshAudit();
-
-      // Load initial trend once
-      try {
-        const u = document.getElementById("unit").value;
-        if (u) await loadTrend(u);
-      } catch {}
     }
 
     async function refreshAudit() {
       try {
-        const a = await api("/audit");
+        const a = await api("/api/audit");
         document.getElementById("audit").textContent = JSON.stringify(a, null, 2);
       } catch (e) {
         document.getElementById("audit").textContent = t("common.accessDenied");
@@ -145,44 +151,54 @@
     }
 
     async function loadTrend(unit) {
+      if (trendLoading) return;
+      trendLoading = true;
+
+      const btn = document.getElementById("loadTrend");
+      const msg = document.getElementById("trendMsg");
+
+      btn.disabled = true;
+      msg.style.display = "none";
+
       try {
-        hideTrendMsg();
-
-        // ✅ اینجا هم /api نداریم
-        const rows = await api(`/reports/trend/unit/${encodeURIComponent(unit)}`);
-
-        if (!Array.isArray(rows) || rows.length === 0) {
-          clearChart();
-          showTrendMsg("No data for this unit yet.");
-          return;
-        }
+        const rows = await api(`/api/reports/trend/unit/${encodeURIComponent(unit)}`);
 
         const labels = rows.map(r => r.period_name);
         const data = rows.map(r => Number(r.avg_score));
 
         clearChart();
-        chart = new Chart(document.getElementById("chart"), {
+
+        const ctx = document.getElementById("chart");
+        chart = new Chart(ctx, {
           type: "line",
           data: {
             labels,
             datasets: [{ label: `AVG Score — ${unit}`, data }]
           },
-          options: { responsive: true, maintainAspectRatio: false }
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            parsing: false
+          }
         });
 
         toast("Trend updated.", "ok");
       } catch (e) {
-        clearChart();
-        showTrendMsg(JSON.stringify(e, null, 2));
+        msg.style.display = "block";
+        msg.textContent = JSON.stringify(e, null, 2);
         toast("Could not load trend.", "danger");
+        clearChart();
+      } finally {
+        btn.disabled = false;
+        trendLoading = false;
       }
     }
 
     document.getElementById("load").onclick = async () => {
       try {
         const pid = document.getElementById("period").value;
-        // ✅ /api حذف شد
-        const rows = await api(`/reports/top-performers/${pid}`);
+        const rows = await api(`/api/reports/top-performers/${pid}`);
         document.getElementById("top").innerHTML = rows.map(r =>
           `<li><b>${r.full_name}</b> <span class="muted small">(${r.unit})</span> — <span class="badge ok">${Number(r.final_score).toFixed(2)}</span></li>`
         ).join("");
@@ -198,8 +214,7 @@
     document.getElementById("exportTop").onclick = async () => {
       const pid = document.getElementById("period").value;
       try {
-        // ✅ /api حذف شد
-        await download(`/reports/top-performers/${pid}.csv`, `top-performers-${pid}.csv`);
+        await download(`/api/reports/top-performers/${pid}.csv`, `top-performers-${pid}.csv`);
         toast(t("toast.downloaded"), "ok");
       } catch (e) {
         toast(t("toast.exportFailed"), "danger");
@@ -210,8 +225,7 @@
 
     document.getElementById("exportAudit").onclick = async () => {
       try {
-        // ✅ /api حذف شد
-        await download("/audit.csv", "audit-last-100.csv");
+        await download("/api/audit.csv", "audit-last-100.csv");
         toast(t("toast.downloaded"), "ok");
       } catch (e) {
         toast(t("toast.exportFailed"), "danger");
@@ -226,8 +240,7 @@
     document.getElementById("exportTrend").onclick = async () => {
       try {
         const unit = document.getElementById("unit").value;
-        // ✅ /api حذف شد
-        await download(`/reports/trend/unit/${encodeURIComponent(unit)}/export.csv`, `trend-unit-${unit}.csv`);
+        await download(`/api/reports/trend/unit/${encodeURIComponent(unit)}/export.csv`, `trend-unit-${unit}.csv`);
         toast(t("toast.downloaded"), "ok");
       } catch (e) {
         toast(t("toast.exportFailed"), "danger");
