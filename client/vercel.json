@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://perf-eval-gmbe.onrender.com/api/$1" }
+  ]
+}
